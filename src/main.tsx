@@ -1,4 +1,4 @@
-import './styles.css';
+import './style.css';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
