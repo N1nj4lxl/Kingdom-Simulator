@@ -465,6 +465,7 @@ function App() {
       const def = BUILDING_OPTIONS.find((opt) => opt.id === b.id);
       if (!def) return;
       if (def.effect.money) deltaMoney += def.effect.money;
+      if ('money' in def.effect && def.effect.money) deltaMoney += def.effect.money;
       if (def.effect.bread) deltaBread += def.effect.bread;
       if (def.effect.happiness) deltaHappy += def.effect.happiness;
     });
