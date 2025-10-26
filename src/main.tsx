@@ -308,6 +308,7 @@ const CHOICE_EVENTS: ChoiceEvent[] = [
 
 // Persistent storage key for saving game state to localStorage.
 const SAVE_KEY = 'kingdom_save_v2';
+const THEME_KEY = 'kingdom_theme';
 
 /**
  * Returns a fresh initial game state. This function is used to start new games
@@ -392,6 +393,17 @@ function App() {
   const fightLogRef = useRef<HTMLDivElement>(null);
   // Kingdom name typed in the menu.
   const [menuName, setMenuName] = useState('');
+  // Theme preference persisted in localStorage.
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem(THEME_KEY);
+      if (stored === 'light' || stored === 'dark') return stored;
+      if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+    }
+    return 'dark';
+  });
+  // Track if a save file exists to enable Continue/Load actions.
+  const [hasSave, setHasSave] = useState(false);
 
   // Append a new entry to the event log. Keeps only the last 600 entries.
   const appendLog = (text: string, tag: Tag = 'event') =>
@@ -406,14 +418,41 @@ function App() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [s.logs]);
 
+  // Persist theme preference and apply it to the document element.
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(THEME_KEY, theme);
+      } catch {
+        // Ignore persistence failures (e.g. private browsing).
+      }
+    }
+  }, [theme]);
+
+  // Detect existing saves on mount so the menu can enable the Continue button.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setHasSave(Boolean(window.localStorage.getItem(SAVE_KEY)));
+  }, []);
+
   // Save and load functions to persist state in localStorage. The save schema
   // version is embedded in the key so incompatible saves do not load.
   const save = () => {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
-    appendLog('Game saved.', 'system');
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+      setHasSave(true);
+      appendLog('Game saved.', 'system');
+    } catch {
+      appendLog('Failed to save game.', 'danger');
+    }
   };
   const load = () => {
-    const raw = localStorage.getItem(SAVE_KEY);
+    if (typeof window === 'undefined') return false;
+    const raw = window.localStorage.getItem(SAVE_KEY);
     if (!raw) {
       appendLog('No save found.', 'system');
       return false;
@@ -421,16 +460,52 @@ function App() {
     try {
       const parsed: State = JSON.parse(raw);
       set(parsed);
+      setMenuName(parsed.name);
+      setFightOpen(false);
+      setShopOpen(false);
+      setPolOpen(false);
+      setBuildOpen(false);
+      setHasSave(true);
       appendLog('Game loaded.', 'system');
       return true;
     } catch {
       appendLog('Failed to load save.', 'danger');
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(SAVE_KEY);
+      }
+      setHasSave(false);
       return false;
     }
   };
   const clearSave = () => {
-    localStorage.removeItem(SAVE_KEY);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(SAVE_KEY);
+    }
+    setHasSave(false);
     appendLog('Save cleared.', 'system');
+  };
+
+  const handleNewGame = () => {
+    const chosenName = menuName.trim() || 'kingdom name';
+    const fresh = { ...createInitialState(), name: chosenName };
+    set(fresh);
+    setFightOpen(false);
+    setShopOpen(false);
+    setPolOpen(false);
+    setBuildOpen(false);
+    setScreen('main');
+    setMenuName(chosenName);
+    if (fightLogRef.current) fightLogRef.current.textContent = '';
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(SAVE_KEY);
+      } catch {
+        // Ignore storage errors when clearing previous saves.
+      }
+    }
+    setHasSave(false);
+    appendLog(`${chosenName}, it is. Use the actions on the left to play.`, 'system');
+    appendLog('==================================================', 'muted');
   };
 
   // Merchant pricing helper: discounts scale with relationship level.
@@ -450,6 +525,18 @@ function App() {
     build: s.buildings.length < s.maxBuildings && s.money >= cheapestBuildCost && s.strength >= 1,
   };
 
+  // Automatically persist progress when playing so refreshing the page resumes the session.
+  useEffect(() => {
+    if (screen !== 'main') return;
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+      setHasSave(true);
+    } catch {
+      // Ignore autosave failures silently.
+    }
+  }, [s, screen]);
+
   /**
    * Apply the daily benefits from constructed buildings. This is called at the
    * end of the sleep cycle after random events have been processed. Each building
@@ -464,10 +551,15 @@ function App() {
     next.buildings.forEach((b) => {
       const def = BUILDING_OPTIONS.find((opt) => opt.id === b.id);
       if (!def) return;
-      if (def.effect.money) deltaMoney += def.effect.money;
-      if ('money' in def.effect && def.effect.money) deltaMoney += def.effect.money;
-      if (def.effect.bread) deltaBread += def.effect.bread;
-      if (def.effect.happiness) deltaHappy += def.effect.happiness;
+      if ('money' in def.effect && typeof def.effect.money === 'number') {
+        deltaMoney += def.effect.money;
+      }
+      if ('bread' in def.effect && typeof def.effect.bread === 'number') {
+        deltaBread += def.effect.bread;
+      }
+      if ('happiness' in def.effect && typeof def.effect.happiness === 'number') {
+        deltaHappy += def.effect.happiness;
+      }
     });
     if (deltaMoney > 0) {
       next.money += deltaMoney;
@@ -643,7 +735,7 @@ function App() {
         buildings: newBuildings,
       };
       // Immediate effects: barracks increase max strength.
-      if (def.effect.maxstrength) {
+      if ('maxstrength' in def.effect && typeof def.effect.maxstrength === 'number') {
         next.maxstrength += def.effect.maxstrength;
         appendLog(`Your ${def.name} increases maximum strength by ${def.effect.maxstrength}.`, 'good');
       }
@@ -1089,15 +1181,23 @@ function App() {
   // Header line summarising current state for display.
   const headerStat = `${s.name} | Day ${s.day} | ${s.currentEra} | ${s.money} coins`;
 
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = `Kingdom Simulator – ${headerStat}`;
+    }
+  }, [headerStat]);
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--text)' }}>
       {/* Sticky header with title, status and utility buttons. */}
       <header style={{ background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', boxShadow: 'var(--shadow)', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ fontWeight: 700, fontSize: 18 }}>Kingdom Simulator</div>
         <div style={{ color: 'var(--muted)' }}>{headerStat}</div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <div className="header-actions">
           <button className="btn accent" onClick={save}>Save</button>
-          <button className="btn" onClick={() => document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light')}>Toggle Theme</button>
+          <button className="btn" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+            Switch to {theme === 'light' ? 'Dark' : 'Light'} Theme
+          </button>
         </div>
       </header>
 
@@ -1113,29 +1213,23 @@ function App() {
               <input id="nm" placeholder="Type a name" value={menuName} onChange={(e) => setMenuName(e.target.value)} />
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <button
-                className="btn accent"
-                onClick={() => {
-                  set((prev) => ({ ...prev, name: menuName.trim() || 'kingdom name' }));
-                  setScreen('main');
-                  appendLog(`${menuName.trim() || 'kingdom name'}, it is. Use the actions on the left to play.`, 'system');
-                  appendLog('==================================================', 'muted');
-                }}
-              >
-                New Game
-              </button>
+              <button className="btn accent" onClick={handleNewGame}>New Game</button>
               <button
                 className="btn"
+                disabled={!hasSave}
+                title={!hasSave ? 'No save available yet' : ''}
                 onClick={() => {
                   if (load()) setScreen('main');
                 }}
               >
-                Load Save
+                Continue
               </button>
-              <button className="btn danger" onClick={clearSave}>Clear Save</button>
+              <button className="btn danger" onClick={clearSave} disabled={!hasSave} title={!hasSave ? 'No save to clear' : ''}>
+                Clear Save
+              </button>
             </div>
             <div className="sep" />
-            <small className="muted">No pop ups. Everything runs in this page.</small>
+            <small className="muted">Progress now auto-saves while you play. No pop ups—everything runs in this page.</small>
           </div>
         </div>
       ) : (

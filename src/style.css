@@ -48,6 +48,16 @@ body {
   font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
 }
 
+.muted {
+  color: var(--muted);
+}
+
+.title {
+  margin: 0 0 8px 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
 /* Buttons share a base appearance with variant modifiers. */
 .btn {
   border: 0;
@@ -76,6 +86,12 @@ body {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
 }
 
 /* Utility classes for common layout patterns. */
@@ -265,4 +281,47 @@ select {
   padding: 16px;
   width: min(600px, 90vw);
   box-shadow: var(--shadow);
+}
+
+@media (max-width: 1080px) {
+  .grid-3 {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  .card {
+    height: auto;
+  }
+
+  .actions {
+    position: sticky;
+    top: 76px;
+  }
+
+  .log {
+    height: 320px;
+  }
+}
+
+@media (max-width: 640px) {
+  header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .header-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .modal {
+    width: 95vw;
+  }
 }
