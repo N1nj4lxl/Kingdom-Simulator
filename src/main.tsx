@@ -396,9 +396,14 @@ function App() {
   // Theme preference persisted in localStorage.
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem(THEME_KEY);
-      if (stored === 'light' || stored === 'dark') return stored;
-      if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+      try {
+        const stored = window.localStorage.getItem(THEME_KEY);
+        if (stored === 'light' || stored === 'dark') return stored;
+      } catch {
+        // Ignore storage access errors and fall back to system preference.
+      }
+      if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches)
+        return 'light';
     }
     return 'dark';
   });
@@ -435,7 +440,11 @@ function App() {
   // Detect existing saves on mount so the menu can enable the Continue button.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    setHasSave(Boolean(window.localStorage.getItem(SAVE_KEY)));
+    try {
+      setHasSave(Boolean(window.localStorage.getItem(SAVE_KEY)));
+    } catch {
+      setHasSave(false);
+    }
   }, []);
 
   // Save and load functions to persist state in localStorage. The save schema
@@ -452,7 +461,14 @@ function App() {
   };
   const load = () => {
     if (typeof window === 'undefined') return false;
-    const raw = window.localStorage.getItem(SAVE_KEY);
+    let raw: string | null = null;
+    try {
+      raw = window.localStorage.getItem(SAVE_KEY);
+    } catch {
+      appendLog('Failed to access save data.', 'danger');
+      setHasSave(false);
+      return false;
+    }
     if (!raw) {
       appendLog('No save found.', 'system');
       return false;
